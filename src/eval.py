@@ -22,6 +22,8 @@ if sys.argv[1] == 'glove':
     from hyperparams_glove import Hyperparams as hp
 elif sys.argv[1] == 'gn':
     from hyperparams_gn_glove import Hyperparams as hp
+elif sys.argv[1] == 'glove_Kor':
+    from hyperparams_glove_Kor import Hyperparams as hp
 
 if hp.gpu:
     cuda.set_device(hp.gpu)
@@ -29,7 +31,9 @@ torch.manual_seed(hp.seed)
 
 def eval_bias_analogy(w2v):
     print('SemBias')
-    bias_analogy_f = open('./SemBias/SemBias')
+    # bias_analogy_f = open('./SemBias/SemBias')
+    sembias_filename = './SemBias/Sembias_Kor' if (sys.argv[1] == 'glove_Kor') else './SemBias/SemBias'
+    bias_analogy_f = open(sembias_filename)
     definition_num = 0
     none_num = 0
     stereotype_num = 0
@@ -38,10 +42,12 @@ def eval_bias_analogy(w2v):
     sub_definition_num = 0
     sub_none_num = 0
     sub_stereotype_num = 0
+    # sub_size = 40
     sub_size = 40
-    sub_start = -(sub_size - sum(1 for line in open('./SemBias/SemBias')))
+    # sub_start = -(sub_size - sum(1 for line in open('./SemBias/SemBias')))
+    sub_start = -(sub_size - sum(1 for line in open(sembias_filename)))
 
-    gender_v = w2v['he'] - w2v['she']
+    gender_v = w2v['남성'] - w2v['여성']
     for sub_idx, l in enumerate(bias_analogy_f):
         l = l.strip().split()
         max_score = -100
@@ -90,7 +96,9 @@ def de_biassing_emb(generator):
         KeyedVectors.load_word2vec_format(hp.word_embedding,
                                           binary=hp.emb_binary)
 
-    emb = gensim.models.keyedvectors.Word2VecKeyedVectors(vector_size=300)
+    vector_size = 100 if (sys.argv[1] == 'glove_Kor') else 300
+    # emb = gensim.models.keyedvectors.Word2VecKeyedVectors(vector_size=300)
+    emb = gensim.models.keyedvectors.Word2VecKeyedVectors(vector_size=vector_size)
     print('Start generating')
     inputs = torch.split(torch.stack([torch.FloatTensor(w2v[word]) for word in w2v.vocab.keys()]), 1024)
     debias_embs = []
@@ -104,8 +112,25 @@ def de_biassing_emb(generator):
 
     return emb
 
+def remove_words_not_in_word2emb(emb, words):
+    return [word for word in words if word in emb]
+
+def remove_words_in_word2emb(emb, words):
+    return [word for word in words if word not in emb]
+
+def make_sembias():
+    emb = KeyedVectors.load_word2vec_format(hp.word_embedding,
+                                        binary=hp.emb_binary)
+    return remove_words_in_word2emb(emb,
+                                        [l.strip() for l in open('SemBias/SemBias_Kor2')])
+
 
 def main():
+    # print(make_sembias())
+    # emb = KeyedVectors.load_word2vec_format(hp.word_embedding,
+    #                                     binary=hp.emb_binary)
+    # eval_bias_analogy(emb)
+
     print('Generating emb...')
     checkpoint = torch.load(hp.eval_model, map_location=lambda storage, loc: storage.cuda(hp.gpu))
 

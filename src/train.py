@@ -22,6 +22,8 @@ if sys.argv[1] == 'glove':
     from hyperparams_glove import Hyperparams as hp
 elif sys.argv[1] == 'gn':
     from hyperparams_gn_glove import Hyperparams as hp
+elif sys.argv[1] == 'glove_Kor':
+    from hyperparams_glove_Kor import Hyperparams as hp
 
 if hp.gpu:
     cuda.set_device(hp.gpu)
@@ -349,6 +351,8 @@ def main():
               + stereotype_words['male'] \
               + gender_words['female'] \
               + gender_words['male']
+
+    print(len(stereotype_words['female']),len(stereotype_words['male']), len(gender_words['female']),len(gender_words['male']),  len(no_gender_words))
 
     train_words, dev_words = create_train_dev(gender_words, no_gender_words, stereotype_words)
 
