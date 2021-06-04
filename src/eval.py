@@ -11,28 +11,11 @@ import os
 import pickle
 import scipy.stats
 import gensim
+import argparse
 
 
-torch.manual_seed(0)
-cuda.manual_seed_all(0)
-np.random.seed(0)
-
-sys.path.append('./hyperparams/')
-if sys.argv[1] == 'glove':
-    from hyperparams_glove import Hyperparams as hp
-elif sys.argv[1] == 'gn':
-    from hyperparams_gn_glove import Hyperparams as hp
-elif sys.argv[1] == 'glove_Kor':
-    from hyperparams_glove_Kor import Hyperparams as hp
-
-if hp.gpu:
-    cuda.set_device(hp.gpu)
-torch.manual_seed(hp.seed)
-
-def eval_bias_analogy(w2v):
-    print('SemBias')
-    # bias_analogy_f = open('./SemBias/SemBias')
-    sembias_filename = './SemBias/Sembias_Kor' if (sys.argv[1] == 'glove_Kor') else './SemBias/SemBias'
+def eval_bias_analogy(emb, w2v):
+    sembias_filename = './SemBias/Sembias_Kor' if (emb == 'glove_Kor') else './SemBias/SemBias'
     bias_analogy_f = open(sembias_filename)
     definition_num = 0
     none_num = 0
@@ -42,12 +25,11 @@ def eval_bias_analogy(w2v):
     sub_definition_num = 0
     sub_none_num = 0
     sub_stereotype_num = 0
-    # sub_size = 40
     sub_size = 40
-    # sub_start = -(sub_size - sum(1 for line in open('./SemBias/SemBias')))
     sub_start = -(sub_size - sum(1 for line in open(sembias_filename)))
 
-    gender_v = w2v['남성'] - w2v['여성']
+    
+    gender_v =  w2v['남성'] - w2v['여성'] if (emb == 'glove_Kor') else w2v['he']-w2v['she']
     for sub_idx, l in enumerate(bias_analogy_f):
         l = l.strip().split()
         max_score = -100
@@ -88,18 +70,18 @@ def eval_bias_analogy(w2v):
     else:
         print('sub none: {}'.format(sub_none_num / sub_size))
 
-def de_biassing_emb(generator):
+def de_biassing_emb(emb_name, hp, generator):
     generator.eval()
-    debias_emb_txt = 'debiased_{}/gender_debiased.txt'.format(sys.argv[1])
-    debias_emb_bin = 'debiased_{}/gender_debiased.bin'.format(sys.argv[1])
+    debias_emb_txt = 'debiased_{}/gender_debiased.txt'.format(emb_name)
+    debias_emb_bin = 'debiased_{}/gender_debiased.bin'.format(emb_name)
     w2v = \
         KeyedVectors.load_word2vec_format(hp.word_embedding,
                                           binary=hp.emb_binary)
 
-    vector_size = 100 if (sys.argv[1] == 'glove_Kor') else 300
-    # emb = gensim.models.keyedvectors.Word2VecKeyedVectors(vector_size=300)
+    vector_size = 100 if (emb_name == 'glove_Kor') else 300
     emb = gensim.models.keyedvectors.Word2VecKeyedVectors(vector_size=vector_size)
-    print('Start generating')
+
+    # print('Start generating')
     inputs = torch.split(torch.stack([torch.FloatTensor(w2v[word]) for word in w2v.vocab.keys()]), 1024)
     debias_embs = []
     for input in inputs:
@@ -112,40 +94,43 @@ def de_biassing_emb(generator):
 
     return emb
 
-def remove_words_not_in_word2emb(emb, words):
-    return [word for word in words if word in emb]
 
-def remove_words_in_word2emb(emb, words):
-    return [word for word in words if word not in emb]
+def main(args):
+    torch.manual_seed(0)
+    cuda.manual_seed_all(0)
+    np.random.seed(0)
 
-def make_sembias():
-    emb = KeyedVectors.load_word2vec_format(hp.word_embedding,
-                                        binary=hp.emb_binary)
-    return remove_words_in_word2emb(emb,
-                                        [l.strip() for l in open('SemBias/SemBias_Kor2')])
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-e", "--emb", type=str, default="glove_Kor", required=False)
+    args = parser.parse_args(args)
 
+    sys.path.append('./hyperparams/')
+    if args.emb == 'glove':
+        from hyperparams_glove import Hyperparams as hp
+    elif args.emb == 'gn':
+        from hyperparams_gn_glove import Hyperparams as hp
+    elif args.emb == 'glove_Kor':
+        from hyperparams_glove_Kor import Hyperparams as hp
 
-def main():
-    # print(make_sembias())
-    # emb = KeyedVectors.load_word2vec_format(hp.word_embedding,
-    #                                     binary=hp.emb_binary)
-    # eval_bias_analogy(emb)
+    if hp.gpu:
+        cuda.set_device(hp.gpu)
+    torch.manual_seed(hp.seed)
 
-    print('Generating emb...')
+    # print('Generating emb...')
     checkpoint = torch.load(hp.eval_model, map_location=lambda storage, loc: storage.cuda(hp.gpu))
 
     encoder = model.Encoder(hp.emb_size, hp.hidden_size, hp.dropout_rate)
     if hp.gpu >= 0:
         encoder.cuda()
     encoder.load_state_dict(checkpoint['encoder'])
-    w2v = de_biassing_emb(encoder)
-    eval_bias_analogy(w2v)
+    w2v = de_biassing_emb(args.emb, hp, encoder)
+    eval_bias_analogy(args.emb, w2v)
 
-    print('Saving emb...')
-    debias_emb_txt = 'src/debiased_{}/gender_debiased.txt'.format(sys.argv[1])
-    debias_emb_bin = 'src/debiased_{}/gender_debiased.bin'.format(sys.argv[1])
+    # print('Saving emb...')
+    debias_emb_txt = 'src/debiased_{}/gender_debiased.txt'.format(args.emb)
+    debias_emb_bin = 'src/debiased_{}/gender_debiased.bin'.format(args.emb)
     w2v.save_word2vec_format(debias_emb_bin, binary=True)
     w2v.save_word2vec_format(debias_emb_txt, binary=False)
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

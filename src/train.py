@@ -16,21 +16,8 @@ from pre_train_autoencoder import pre_train_autoencoder
 from pre_train_classifier import pre_train_classifier
 import optim
 import model
+import argparse
 
-sys.path.append('./hyperparams/')
-if sys.argv[1] == 'glove':
-    from hyperparams_glove import Hyperparams as hp
-elif sys.argv[1] == 'gn':
-    from hyperparams_gn_glove import Hyperparams as hp
-elif sys.argv[1] == 'glove_Kor':
-    from hyperparams_glove_Kor import Hyperparams as hp
-
-if hp.gpu:
-    cuda.set_device(hp.gpu)
-    cuda.manual_seed_all(hp.seed)
-torch.manual_seed(hp.seed)
-random.seed(hp.seed)
-np.random.seed(hp.seed)
 
 def shuffle_data(words, tags=None, limit_size=None, sampling=None):
     perm = torch.randperm(len(words))
@@ -49,7 +36,7 @@ def shuffle_data(words, tags=None, limit_size=None, sampling=None):
 
     return words, tags
 
-def create_train_dev(gender_words, no_gender_words, stereotype_words):
+def create_train_dev(hp, gender_words, no_gender_words, stereotype_words):
     stereotype_words = stereotype_words['female'] + stereotype_words['male']
 
     gender_pairs = [[female, male] for female, male in zip(gender_words['female'], gender_words['male'])]
@@ -70,7 +57,7 @@ def create_train_dev(gender_words, no_gender_words, stereotype_words):
 
     return train_words, dev_words
 
-def trainModel(encoder, encoder_optim,
+def trainModel(hp, encoder, encoder_optim,
                female_classifier, female_classifier_optim,
                male_classifier, male_classifier_optim,
                decoder, decoder_optim,
@@ -246,7 +233,7 @@ def trainModel(encoder, encoder_optim,
         gender_vektor = torch.sum(male_embs - female_embs, 0) / male_embs.size(0)
         return gender_vektor
 
-    print('Start training')
+    # print('Start training')
     best_loss = float('inf')
     decoder_loss_list = []
     female_classifier_loss_list = []
@@ -297,6 +284,7 @@ def trainModel(encoder, encoder_optim,
             }
             torch.save(checkpoint, '{}model_checkpoint'.format(hp.save_model))
 
+    print(f'best epoch: {best_epoch}')
     checkpoint = torch.load('{}model_checkpoint'.format(hp.save_model))
     torch.save(checkpoint,
                '{}best_model.pt'.format(hp.save_model, best_loss, best_epoch))
@@ -333,12 +321,42 @@ def make_optim(model, optimizer, learning_rate, lr_decay, max_grad_norm):
 
     return model_optim
 
-def main():
-    print('Loading word embedding')
+def main(args):
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-e", "--emb", type=str, default="glove_Kor", required=False)
+    parser.add_argument("-p", "--predata", type=str, default="random", required=False)
+    parser.add_argument("-d", "--decoder", type=float, default= 1.0, required=False)
+    parser.add_argument("-g", "--gender", type=float, default=0.0001, required=False)
+    parser.add_argument("-n", "--nongender", type=float, default=0.0001, required=False)
+    args = parser.parse_args(args)
+
+    sys.path.append('./hyperparams/')
+    if args.emb == 'glove':
+        from hyperparams_glove import Hyperparams as hp
+    elif args.emb == 'gn':
+        from hyperparams_gn_glove import Hyperparams as hp
+    elif args.emb == 'glove_Kor':
+        from hyperparams_glove_Kor import Hyperparams as hp
+
+    hp.pre_data = args.predata
+    hp.decoder_loss_rate = args.decoder
+    hp.female_loss_rate, hp.male_loss_rate = [args.gender]*2
+    hp.gender_stereotype_loss_rate, hp.gender_no_gender_loss_rate, hp.gender_vektor_loss_rate\
+        = [args.nongender]*3
+
+    if hp.gpu:
+        cuda.set_device(hp.gpu)
+        cuda.manual_seed_all(hp.seed)
+    torch.manual_seed(hp.seed)
+    random.seed(hp.seed)
+    np.random.seed(hp.seed)
+
+    # print('Loading word embedding')
     emb = KeyedVectors.load_word2vec_format(hp.word_embedding,
                                         binary=hp.emb_binary)
 
-    print("Loading data")
+    # print("Loading data")
     stereotype_words = {}
     gender_words = {}
     no_gender_words = make_no_gender_words(open(hp.no_gender_words), emb)
@@ -352,16 +370,14 @@ def main():
               + gender_words['female'] \
               + gender_words['male']
 
-    print(len(stereotype_words['female']),len(stereotype_words['male']), len(gender_words['female']),len(gender_words['male']),  len(no_gender_words))
-
-    train_words, dev_words = create_train_dev(gender_words, no_gender_words, stereotype_words)
+    train_words, dev_words = create_train_dev(hp, gender_words, no_gender_words, stereotype_words)
 
     word2emb = {}
     for word in all_words:
         word2emb[word] = emb[word]
 
     if hp.pre_train_autoencoder:
-        print('Pre-training autoencoder')
+        # print('Pre-training autoencoder')
         encoder = model.Encoder(hp.emb_size, hp.hidden_size, hp.pta_dropout_rate)
         decoder = model.Decoder(hp.hidden_size, hp.emb_size, hp.pta_dropout_rate)
         if hp.gpu >= 0:
@@ -441,7 +457,7 @@ def main():
         dev_stereotype_embs = [encoder(torch.FloatTensor(emb[word]).cuda()).data if hp.gpu >= 0 else encoder(torch.FloatTensor(emb[word])).data for word in dev_words['no gender']]
         encoder.zero_grad()
 
-        print('Pre-training classifier')
+        # print('Pre-training classifier')
         female_checkpoint, male_checkpoint = pre_train_classifier(hp,
                                             female_classifier,
                                             male_classifier,
@@ -454,7 +470,7 @@ def main():
                                             dev_male_embs,
                                             dev_stereotype_embs)
 
-    print('Building female & male classifiers')
+    # print('Building female & male classifiers')
     female_classifier = model.Classifier(hp.hidden_size)
     male_classifier = model.Classifier(hp.hidden_size)
     if hp.gpu >= 0:
@@ -464,7 +480,7 @@ def main():
         female_classifier.load_state_dict(female_checkpoint['female'])
         male_classifier.load_state_dict(male_checkpoint['male'])
 
-    print('Setting optimizer')
+    # print('Setting optimizer')
     encoder_optim = make_optim(encoder,
                                  hp.optimizer,
                                  hp.learning_rate,
@@ -486,7 +502,7 @@ def main():
                                         hp.lr_decay,
                                         hp.max_grad_norm)
 
-    trainModel(encoder, encoder_optim,
+    trainModel(hp, encoder, encoder_optim,
                female_classifier, female_classifier_optim,
                male_classifier, male_classifier_optim,
                decoder, decoder_optim,
@@ -494,4 +510,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main(sys.argv[1:])
+    except:
+        print('Five arguments are required')

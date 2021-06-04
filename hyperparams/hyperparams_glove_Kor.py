@@ -8,6 +8,7 @@ class Hyperparams:
     eval_model = 'src/glove_Kor_model/best_model.pt'
 
     word_embedding = './embeddings/glove_Kor.txt'
+    
     # pre-train autoencoder
     pre_train_autoencoder = True
     pre_data = 'random' # random or common
@@ -26,7 +27,7 @@ class Hyperparams:
     cls_optimizer = 'adam'
     cls_lr_decay = 1
     cls_max_grad_norm = None
-    cls_epochs = 15
+    cls_epochs = 5
 
     dev_num = 20
     sampling = 'under_sampling' # over_sampling or under_sampling
@@ -43,16 +44,16 @@ class Hyperparams:
     gender_vektor_loss = False
     max_grad_norm = None
 
-    decoder_loss_rate = 1.0
-    female_loss_rate = 0.0005
-    male_loss_rate = 0.0005
-    gender_stereotype_loss_rate = 0.0003
-    gender_no_gender_loss_rate = 0.0003
+    decoder_loss_rate = 0.0001
+    female_loss_rate = 0.2
+    male_loss_rate = 0.2
+    gender_stereotype_loss_rate = 0.6
+    gender_no_gender_loss_rate = 0.6
     gender_vektor_loss_rate = 0.0001
 
     emb_size = 100
     hidden_size = 100
 
-    epochs = 5
+    epochs = 15
     seed = 0
     gpu = 0
